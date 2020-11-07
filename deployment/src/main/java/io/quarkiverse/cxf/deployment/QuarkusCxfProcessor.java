@@ -25,6 +25,7 @@ import javax.xml.bind.annotation.*;
 import javax.xml.bind.annotation.adapters.XmlJavaTypeAdapter;
 import javax.xml.ws.soap.SOAPBinding;
 
+import io.quarkus.vertx.http.runtime.HandlerType;
 import org.apache.cxf.common.jaxb.JAXBUtils;
 import org.apache.cxf.common.util.StringUtils;
 import org.jboss.jandex.AnnotationInstance;
@@ -324,17 +325,55 @@ class QuarkusCxfProcessor {
     private static final String WRAPPER_HELPER_POSTFIX = "_WrapperTypeHelper";
     private static final String WRAPPER_FACTORY_POSTFIX = "Factory";
 
+    //inspired from https://github.com/forge/roaster/blob/master/api/src/main/java/org/jboss/forge/roaster/model/util/Types.java#L599-L644?
+    private String fixMethodDescriptorName (String methodDescType) {
+        String result = methodDescType;
+        if (methodDescType != null && methodDescType.length() == 1) {
+            switch (methodDescType) {
+                case "B":
+                    result = "byte";
+                    break;
+                case "F":
+                    result = "float";
+                    break;
+                case "C":
+                    result = "char";
+                    break;
+                case "D":
+                    result = "double";
+                    break;
+                case "I":
+                    result = "int";
+                    break;
+                case "J":
+                    result = "long";
+                    break;
+                case "S":
+                    result = "short";
+                    break;
+                case "Z":
+                    result = "boolean";
+                    break;
+                default:
+                    break;
+            }
+        }
+        return result;
+    }
     private String computeSignature(List<MethodDescriptor> getters, List<MethodDescriptor> setters) {
         StringBuilder b = new StringBuilder();
         b.append(setters.size()).append(':');
         for (int x = 0; x < setters.size(); x++) {
-            if (getters.get(x) == null) {
+            MethodDescriptor getMethodDesc = getters.get(x);
+            if (getMethodDesc == null) {
                 b.append("null,");
             } else {
-                b.append(getters.get(x).getName()).append('/');
-                b.append(getters.get(x).getReturnType()).append(',');
+                //convert MethodDescriptor.getReturnType() format to Method.getReturnType().getName() format
+                b.append(fixMethodDescriptorName(getMethodDesc.getName())).append('/');
+                b.append(fixMethodDescriptorName(getMethodDesc.getReturnType())).append(',');
             }
         }
+
         return b.toString();
     }
 
@@ -991,6 +1030,7 @@ class QuarkusCxfProcessor {
             if (!Modifier.isInterface(wsClassInfo.flags())) {
                 continue;
             }
+            LOGGER.info("GENERATE WRAPPERS FOR WEBSERVICE :" + wsClassInfo.name().toString());
             //ClientProxyFactoryBean
             //proxies.produce(new NativeImageProxyDefinitionBuildItem("java.io.Closeable",
             //        "org.apache.cxf.endpoint.Client", wsClassInfo.name().toString()));
@@ -1068,6 +1108,7 @@ class QuarkusCxfProcessor {
                 }
                 String className = StringUtils.capitalize(mi.name());
                 String operationName = mi.name();
+                LOGGER.info("GENERATE WRAPPER FOR METHOD :" + operationName);
                 AnnotationInstance webMethodAnnotation = mi.annotation(WEBMETHOD_ANNOTATION);
                 if (webMethodAnnotation != null) {
                     AnnotationValue nameVal = webMethodAnnotation.value("operationName");
@@ -1420,9 +1461,16 @@ class QuarkusCxfProcessor {
 
     @BuildStep
     @Record(ExecutionTime.STATIC_INIT)
+    RouteBuildItem handler(LaunchModeBuildItem launch,
+                           BuildProducer<NotFoundPageDisplayableEndpointBuildItem> displayableEndpoints, OpenApiRecorder recorder,
+                           ShutdownContextBuildItem shutdownContext) {
+        return new RouteBuildItem(openApiConfig.path, new OpenApiHandler(), HandlerType.BLOCKING);
+    }
+
+    @BuildStep
+    @Record(ExecutionTime.STATIC_INIT)
     public void configureServletInfoSupplier(List<CXFServletInfoBuildItem> cxfServletInfos,
             BuildProducer<RouteBuildItem> routes,
-            BuildProducer<SyntheticBeanBuildItem> synthetics,
             CXFRecorder recorder) {
         LOGGER.warn("recorder servlet" + cxfServletInfos.size());
         for (CXFServletInfoBuildItem cxfServletInfoBuildItem : cxfServletInfos) {
@@ -1437,8 +1485,10 @@ class QuarkusCxfProcessor {
                     cxfServletInfoBuildItem.getWsdlPath(),
                     cxfServletInfoBuildItem.getSOAPBinding(),
                     cxfServletInfoBuildItem.getWrapperClassNames());
+            routes.produce(new RouteBuildItem(openApiConfig.path, new OpenApiHandler(), HandlerType.BLOCKING));
 
         }
+
     }
 
     @BuildStep

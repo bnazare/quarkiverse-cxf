@@ -14,7 +14,7 @@ public class UndertowDestination extends AbstractHTTPDestination {
     public UndertowDestination(EndpointInfo endpointInfo, Bus bus, DestinationRegistry destinationRegistry) throws IOException {
         super(bus, destinationRegistry, endpointInfo, getAddressValue(endpointInfo, true).getAddress(), true);
     }
-
+//TODO CALL incomingObserver.onMessage()
     @Override
     protected Logger getLogger() {
         return null;
@@ -23,5 +23,10 @@ public class UndertowDestination extends AbstractHTTPDestination {
     @Override
     public EndpointReferenceType getAddress() {
         return super.getAddress();
+    }
+
+    @Override
+    protected void activate() {
+        super.activate();
     }
 }
